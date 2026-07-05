@@ -1,0 +1,41 @@
+MUTUAL NON-DISCLOSURE AGREEMENT
+
+This Mutual Non-Disclosure Agreement ("Agreement") is entered into between Northbridge Analytics Inc.
+and Fernwood Data Solutions LLC on March 3, 2026 (the "Effective Date").
+
+1. PURPOSE
+The parties wish to explore a potential business relationship and may disclose confidential
+information to one another for that purpose.
+
+2. CONFIDENTIALITY
+Each party agrees to hold the other party's confidential information in strict confidence and
+shall not disclose such information to any third party without prior written consent. Confidential
+information shall not include information that is publicly available or independently developed.
+
+3. TERM AND TERMINATION
+This Agreement shall remain in effect for two years from the Effective Date. Either party may
+terminate this Agreement with thirty days written notice to the other party.
+
+4. LIABILITY
+Each party's liability under this Agreement shall be limited to direct damages arising from a
+breach of the confidentiality obligations herein, capped at the fees paid under any related
+services agreement between the parties.
+
+5. GOVERNING LAW
+This Agreement shall be governed by the laws of the State of Delaware, without regard to its
+conflict of law principles. Any dispute arising under this Agreement shall first be submitted to
+mediation before either party may pursue litigation.
+
+6. INTELLECTUAL PROPERTY
+Nothing in this Agreement shall be construed as granting either party any rights to the other
+party's intellectual property, patents, trademarks, or copyrights.
+
+7. FORCE MAJEURE
+Neither party shall be liable for failure to perform its obligations due to causes beyond its
+reasonable control, including natural disasters, war, or government action.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.
+
+Northbridge Analytics Inc.                    Fernwood Data Solutions LLC
+_________________________                     _________________________
+Authorized Signature                          Authorized Signature

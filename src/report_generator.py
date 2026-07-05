@@ -1,0 +1,208 @@
+"""
+report_generator.py
+====================
+Generates downloadable PDF and DOCX analysis reports combining:
+    contract info, risk detection, summary, and compliance score.
+
+Both generators return raw bytes so app.py can feed them straight into
+st.download_button without touching the filesystem.
+"""
+
+import io
+from datetime import datetime
+
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+)
+from docx import Document
+from docx.shared import Pt, RGBColor, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+TEYZIX_GREEN = "#1a5d3a"
+TEYZIX_GREEN_RGB = (0x1A, 0x5D, 0x3A)
+
+
+def _risk_color(level: str):
+    return {"high": colors.HexColor("#c0392b"), "medium": colors.HexColor("#d68910"),
+            "low": colors.HexColor("#1e8449")}.get(level, colors.grey)
+
+
+def generate_pdf_report(filename: str, info: dict, risks: dict, summary: dict, compliance: dict) -> bytes:
+    """Build a formatted PDF analysis report. Returns raw PDF bytes."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.7 * inch, bottomMargin=0.7 * inch)
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "TitleGreen", parent=styles["Title"], textColor=colors.HexColor(TEYZIX_GREEN), spaceAfter=6,
+    )
+    heading_style = ParagraphStyle(
+        "HeadingGreen", parent=styles["Heading2"], textColor=colors.HexColor(TEYZIX_GREEN),
+        spaceBefore=14, spaceAfter=6,
+    )
+    body_style = styles["BodyText"]
+
+    story = []
+    story.append(Paragraph("Contract & Legal Document Risk Analysis Report", title_style))
+    story.append(Paragraph(f"Document: {filename}", body_style))
+    story.append(Paragraph(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}", body_style))
+    story.append(Spacer(1, 12))
+
+    # --- Compliance score banner ---
+    score = compliance.get("score", "N/A")
+    grade = compliance.get("grade", "N/A")
+    story.append(Paragraph(f"Compliance Score: {score}/100 (Grade {grade})", heading_style))
+    story.append(Paragraph(compliance.get("explanation", ""), body_style))
+
+    # --- Contract info ---
+    story.append(Paragraph("Contract Information", heading_style))
+    info_rows = [
+        ["Contract Type", info.get("contract_type", "N/A")],
+        ["Parties", ", ".join(info.get("parties", [])) or "N/A"],
+        ["Effective Date", info.get("effective_date") or "N/A"],
+        ["Expiration Date", info.get("expiration_date") or "N/A"],
+        ["Payment Terms", (info.get("payment_terms") or "N/A")[:200]],
+        ["Renewal Terms", (info.get("renewal_terms") or "N/A")[:200]],
+    ]
+    table = Table([["Field", "Value"]] + info_rows, colWidths=[1.6 * inch, 4.6 * inch])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(TEYZIX_GREEN)),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f2f2f2")]),
+    ]))
+    story.append(table)
+
+    # --- Risks ---
+    story.append(Paragraph("Risk Analysis", heading_style))
+    story.append(Paragraph(f"Overall Risk Level: <b>{risks.get('overall_risk_level', 'N/A').upper()}</b>", body_style))
+    story.append(Spacer(1, 6))
+    for risk in risks.get("risks", [])[:15]:
+        level = risk.get("risk_level", "low")
+        p_style = ParagraphStyle(
+            "RiskItem", parent=body_style, textColor=_risk_color(level), spaceAfter=4,
+        )
+        story.append(Paragraph(
+            f"[{level.upper()}] {risk.get('clause', '')}: {risk.get('explanation', '')}", p_style
+        ))
+
+    if risks.get("missing_clauses"):
+        story.append(Paragraph("Missing Standard Clauses: " + ", ".join(risks["missing_clauses"]), body_style))
+
+    # --- Summary ---
+    story.append(PageBreak())
+    story.append(Paragraph("Executive Summary", heading_style))
+    story.append(Paragraph(summary.get("executive_summary", "N/A"), body_style))
+
+    story.append(Paragraph("Key Obligations", heading_style))
+    for ob in summary.get("key_obligations", [])[:10]:
+        story.append(Paragraph(f"\u2022 {ob}", body_style))
+
+    story.append(Paragraph("Important Dates", heading_style))
+    for d in summary.get("important_dates", [])[:10]:
+        story.append(Paragraph(f"\u2022 {d}", body_style))
+
+    story.append(Paragraph("Recommended Actions", heading_style))
+    for a in summary.get("recommended_actions", [])[:10]:
+        story.append(Paragraph(f"\u2022 {a}", body_style))
+
+    story.append(Spacer(1, 20))
+    story.append(Paragraph(
+        "Generated by TEYZIX CORE Internship Task 3 \u2014 AI-Powered Contract Risk Analyzer. "
+        "This report is AI-assisted and does not constitute legal advice.",
+        ParagraphStyle("Footer", parent=body_style, fontSize=7, textColor=colors.grey),
+    ))
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
+def generate_docx_report(filename: str, info: dict, risks: dict, summary: dict, compliance: dict) -> bytes:
+    """Build a formatted DOCX analysis report. Returns raw DOCX bytes."""
+    document = Document()
+
+    title = document.add_heading("Contract & Legal Document Risk Analysis Report", level=0)
+    for run in title.runs:
+        run.font.color.rgb = RGBColor(*TEYZIX_GREEN_RGB)
+
+    document.add_paragraph(f"Document: {filename}")
+    document.add_paragraph(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+
+    score = compliance.get("score", "N/A")
+    grade = compliance.get("grade", "N/A")
+    h = document.add_heading(f"Compliance Score: {score}/100 (Grade {grade})", level=1)
+    for run in h.runs:
+        run.font.color.rgb = RGBColor(*TEYZIX_GREEN_RGB)
+    document.add_paragraph(compliance.get("explanation", ""))
+
+    h = document.add_heading("Contract Information", level=1)
+    for run in h.runs:
+        run.font.color.rgb = RGBColor(*TEYZIX_GREEN_RGB)
+
+    table = document.add_table(rows=1, cols=2)
+    table.style = "Light Grid Accent 1"
+    hdr = table.rows[0].cells
+    hdr[0].text, hdr[1].text = "Field", "Value"
+
+    info_rows = [
+        ("Contract Type", info.get("contract_type", "N/A")),
+        ("Parties", ", ".join(info.get("parties", [])) or "N/A"),
+        ("Effective Date", info.get("effective_date") or "N/A"),
+        ("Expiration Date", info.get("expiration_date") or "N/A"),
+        ("Payment Terms", info.get("payment_terms") or "N/A"),
+        ("Renewal Terms", info.get("renewal_terms") or "N/A"),
+    ]
+    for field, value in info_rows:
+        row = table.add_row().cells
+        row[0].text = field
+        row[1].text = str(value)
+
+    h = document.add_heading("Risk Analysis", level=1)
+    for run in h.runs:
+        run.font.color.rgb = RGBColor(*TEYZIX_GREEN_RGB)
+    document.add_paragraph(f"Overall Risk Level: {risks.get('overall_risk_level', 'N/A').upper()}")
+    for risk in risks.get("risks", [])[:15]:
+        p = document.add_paragraph()
+        run = p.add_run(f"[{risk.get('risk_level', 'low').upper()}] {risk.get('clause', '')}: ")
+        run.bold = True
+        p.add_run(risk.get("explanation", ""))
+
+    if risks.get("missing_clauses"):
+        document.add_paragraph("Missing Standard Clauses: " + ", ".join(risks["missing_clauses"]))
+
+    document.add_page_break()
+    h = document.add_heading("Executive Summary", level=1)
+    for run in h.runs:
+        run.font.color.rgb = RGBColor(*TEYZIX_GREEN_RGB)
+    document.add_paragraph(summary.get("executive_summary", "N/A"))
+
+    document.add_heading("Key Obligations", level=2)
+    for ob in summary.get("key_obligations", [])[:10]:
+        document.add_paragraph(ob, style="List Bullet")
+
+    document.add_heading("Important Dates", level=2)
+    for d in summary.get("important_dates", [])[:10]:
+        document.add_paragraph(d, style="List Bullet")
+
+    document.add_heading("Recommended Actions", level=2)
+    for a in summary.get("recommended_actions", [])[:10]:
+        document.add_paragraph(a, style="List Bullet")
+
+    footer = document.add_paragraph(
+        "Generated by TEYZIX CORE Internship Task 3 \u2014 AI-Powered Contract Risk Analyzer. "
+        "This report is AI-assisted and does not constitute legal advice."
+    )
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    for run in footer.runs:
+        run.font.size = Pt(8)
+        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()

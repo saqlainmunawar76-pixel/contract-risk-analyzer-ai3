@@ -1,0 +1,39 @@
+EMPLOYMENT AGREEMENT
+
+This Employment Agreement is entered into between Cedarline Technologies Pvt. Ltd. and the
+Employee named below, effective April 1, 2026.
+
+Employee Name: [Employee Name]
+Job Title: Senior Software Engineer
+Salary: PKR 350,000 per month, payable monthly in arrears
+
+1. DUTIES
+The Employee shall perform duties as assigned by the Employer, including software development,
+code review, and mentoring of junior engineers. The Employee agrees to devote full working hours
+to the Employer's business.
+
+2. CONFIDENTIALITY
+The Employee shall not disclose any confidential information, trade secrets, or proprietary data
+belonging to the Employer, both during and after employment.
+
+3. TERMINATION
+Either party may terminate this Agreement with thirty days written notice. The Employer may
+terminate immediately for cause, including misconduct or breach of company policy.
+
+4. INTELLECTUAL PROPERTY
+All work product, inventions, and code created by the Employee during the course of employment
+shall be the sole property of the Employer.
+
+5. BENEFITS
+The Employee shall be entitled to twenty days of paid annual leave, medical insurance coverage,
+and provident fund contributions as per company policy.
+
+6. NON-COMPETE
+The Employee agrees not to work for a direct competitor of the Employer within Pakistan for a
+period of six months following termination of employment.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement.
+
+Cedarline Technologies Pvt. Ltd.              Employee
+_________________________                     _________________________
+Authorized Signature                          Signature
