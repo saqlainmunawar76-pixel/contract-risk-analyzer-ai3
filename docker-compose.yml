@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  contract-risk-analyzer:
+    build: .
+    container_name: contract-risk-analyzer
+    ports:
+      - "8501:8501"
+    environment:
+      # Prefer setting these via a local .env file (not committed) or your
+      # host's secret manager. Leave GEMINI_API_KEY empty to run in
+      # fully rule-based fallback mode.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+    volumes:
+      # Persist the SQLite database across container restarts/rebuilds.
+      - ./data:/app/data
+    restart: unless-stopped

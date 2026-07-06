@@ -123,6 +123,16 @@ def update_last_login(user_id):
         conn.execute("UPDATE users SET last_login = ? WHERE id = ?", (datetime.utcnow().isoformat(), user_id))
 
 
+def update_password(user_id, new_password_hash):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_password_hash, user_id))
+
+
+def update_email(user_id, new_email):
+    with get_conn() as conn:
+        conn.execute("UPDATE users SET email = ? WHERE id = ?", (new_email, user_id))
+
+
 def list_all_users():
     with get_conn() as conn:
         rows = conn.execute("SELECT id, username, email, role, created_at, last_login FROM users ORDER BY id").fetchall()
@@ -239,3 +249,105 @@ def get_dashboard_stats():
             "total_analyses": total_analyses,
             "documents_by_type": {r["file_type"]: r["c"] for r in by_type},
         }
+
+
+def get_user_risk_insights(user_id):
+    """
+    Aggregate risk/compliance data across a single user's documents for the
+    'AI Insights Dashboard': average risk score, high-risk document count,
+    most frequently detected risk clauses, and a processing history timeline.
+    """
+    import json as _json
+
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT analyses.result_json, analyses.analysis_type, analyses.created_at,
+                   documents.filename, documents.id as document_id
+            FROM analyses
+            JOIN documents ON analyses.document_id = documents.id
+            WHERE documents.user_id = ?
+            ORDER BY analyses.created_at DESC
+        """, (user_id,)).fetchall()
+
+    compliance_scores = []
+    risk_levels = []
+    clause_counter = {}
+    processing_history = []
+    seen_history_keys = set()
+
+    for row in rows:
+        try:
+            data = _json.loads(row["result_json"])
+        except (ValueError, TypeError):
+            continue
+
+        history_key = (row["document_id"], row["created_at"])
+        if history_key not in seen_history_keys:
+            seen_history_keys.add(history_key)
+            processing_history.append({
+                "filename": row["filename"],
+                "analysis_type": row["analysis_type"],
+                "processed_at": row["created_at"],
+            })
+
+        if row["analysis_type"] == "compliance" and isinstance(data.get("score"), (int, float)):
+            compliance_scores.append(data["score"])
+
+        if row["analysis_type"] == "risks":
+            level = data.get("overall_risk_level")
+            if level:
+                risk_levels.append(level)
+            for risk in data.get("risks", []):
+                clause = risk.get("clause", "Unknown")
+                clause_counter[clause] = clause_counter.get(clause, 0) + 1
+
+    avg_risk_score = round(sum(compliance_scores) / len(compliance_scores), 1) if compliance_scores else None
+    high_risk_doc_count = sum(1 for lvl in risk_levels if lvl == "high")
+    frequent_risks = sorted(clause_counter.items(), key=lambda x: x[1], reverse=True)[:10]
+    processing_history.sort(key=lambda x: x["processed_at"], reverse=True)
+
+    return {
+        "average_compliance_score": avg_risk_score,
+        "high_risk_document_count": high_risk_doc_count,
+        "total_documents_analyzed": len(risk_levels),
+        "frequently_detected_risks": [{"clause": c, "count": n} for c, n in frequent_risks],
+        "processing_history": processing_history[:20],
+    }
+
+
+def get_ai_usage_stats():
+    """
+    Admin-facing: how many analyses were produced by live Gemini calls vs the
+    rule-based fallback, across ALL users. Used for the 'Monitor AI Usage'
+    admin panel requirement.
+    """
+    import json as _json
+
+    with get_conn() as conn:
+        rows = conn.execute("SELECT result_json, analysis_type FROM analyses").fetchall()
+
+    ai_count = 0
+    fallback_count = 0
+    by_type = {}
+    for row in rows:
+        try:
+            data = _json.loads(row["result_json"])
+        except (ValueError, TypeError):
+            continue
+        source = data.get("source", "unknown")
+        by_type.setdefault(row["analysis_type"], {"ai": 0, "fallback": 0})
+        if source == "ai":
+            ai_count += 1
+            by_type[row["analysis_type"]]["ai"] += 1
+        else:
+            fallback_count += 1
+            by_type[row["analysis_type"]]["fallback"] += 1
+
+    total = ai_count + fallback_count
+    return {
+        "total_analyses": total,
+        "ai_powered_count": ai_count,
+        "fallback_count": fallback_count,
+        "ai_usage_percent": round(100 * ai_count / total, 1) if total else 0,
+        "by_analysis_type": by_type,
+    }

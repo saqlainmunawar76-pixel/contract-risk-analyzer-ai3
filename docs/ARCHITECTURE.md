@@ -113,3 +113,32 @@ dependencies, and deploys reliably everywhere.
   `storage` queries (user list, all documents, audit log).
 - File uploads are size- and extension-validated before any parsing library
   ever touches the bytes.
+
+## Optional Modules
+
+### `notifier.py` (Email Report Delivery)
+
+Fully optional SMTP-based email delivery for generated reports. Reads
+`SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` /
+`SMTP_FROM_EMAIL` from Streamlit secrets or environment variables.
+`is_configured()` lets the UI hide the email option entirely when unset, and
+`send_report_email()` never raises -- any failure (bad credentials, DNS
+failure, timeout) is caught and returned as `{"success": False, "message": ...}`
+so the app never crashes because of an email problem.
+
+### Docker Deployment
+
+`Dockerfile` builds a `python:3.11-slim` image with the `tesseract-ocr`
+system package pre-installed (matching `packages.txt` for Streamlit Cloud),
+installs `requirements.txt`, and runs `streamlit run app.py` on port 8501.
+`docker-compose.yml` mounts `./data` as a volume so the SQLite database
+survives container rebuilds, and passes through `GEMINI_API_KEY` /
+`SMTP_*` environment variables from a local `.env` file.
+
+## Dashboard Aggregation (`storage.get_user_risk_insights` / `get_ai_usage_stats`)
+
+Both functions read the `analyses` table (which stores one JSON blob per
+analysis run, tagged with `analysis_type` and a `source: "ai"|"fallback"`
+field) and aggregate across all of a user's documents (or globally, for the
+admin's AI usage view) without needing a separate stats table -- the
+JSON blobs already saved by the Analysis tab are the single source of truth.

@@ -36,7 +36,7 @@ MODEL_NAME = "gemini-2.5-flash"
 # ---- Common clauses we check for in risk detection & compliance scoring ----
 STANDARD_CLAUSES = {
     "termination": ["terminat", "end this agreement", "cancel this agreement"],
-    "confidentiality": ["confidential", "non-disclosure", "nda"],
+    "confidentiality": ["confidential", "non-disclosure"],
     "indemnification": ["indemnif", "hold harmless"],
     "governing_law": ["governing law", "jurisdiction", "applicable law"],
     "liability": ["liability", "limitation of liability", "liable for damages"],
@@ -56,6 +56,20 @@ HIGH_RISK_PATTERNS = {
     "broad_indemnification": r"indemnif(?:y|ication)[\s\S]{0,120}(?:any and all|all claims|regardless of)",
     "no_liability_cap": r"no cap on|without limitation[\s\S]{0,40}damages|no cap on damages",
     "exclusive_jurisdiction_waiver": r"waiv(?:e|es|ing)[\s\S]{0,60}(?:right to|jury trial|appeal)",
+}
+
+AMBIGUOUS_STATEMENT_PATTERNS = {
+    "vague_effort_standard": r"reasonable (?:efforts|endeavors)|best efforts|commercially reasonable",
+    "vague_timing": r"from time to time|as (?:needed|required|necessary)(?! by law)",
+    "unilateral_discretion_clause": r"in its (?:sole |absolute )?discretion|as (?:it|the company) (?:deems|sees) fit",
+    "undefined_standard": r"material(?:ly)? (?:breach|change|adverse)|substantial(?:ly)? (?:compliance|complete)",
+}
+
+UNUSUAL_PAYMENT_PATTERNS = {
+    "full_upfront_nonrefundable": r"(?:100\s?%|full amount)[\s\S]{0,40}(?:non-refundable|advance|upfront)",
+    "payment_on_demand": r"payable (?:immediately|on demand|upon demand)",
+    "uncapped_late_fee": r"(?:penalty|interest)[\s\S]{0,50}maximum rate permitted",
+    "penalty_no_grace_period": r"(?:late fee|penalty)[\s\S]{0,40}(?:immediately|no grace period)",
 }
 
 
@@ -199,13 +213,20 @@ def detect_risks(text: str, client=None) -> dict:
             prompt = f"""You are a contract risk analyst. Review this contract and return JSON only:
 {{
   "risks": [
-    {{"clause": "string", "risk_level": "high|medium|low", "explanation": "string", "confidence": 0.0-1.0}}
+    {{"clause": "string", "risk_level": "high|medium|low", "explanation": "string",
+      "confidence": 0.0-1.0, "risk_category": "high_risk_clause|missing_clause|ambiguous_statement|unusual_payment_term"}}
   ],
   "missing_clauses": ["string", ...],
   "overall_risk_level": "high|medium|low"
 }}
-Focus on: unlimited liability, one-sided termination rights, broad indemnification, unfavorable auto-renewal,
-missing dispute resolution, vague payment terms, missing confidentiality protection.
+Check for ALL of these categories:
+1. High-risk clauses: unlimited liability, one-sided termination rights, broad indemnification,
+   unfavorable auto-renewal, waived jury trial/appeal rights.
+2. Missing standard clauses: dispute resolution, confidentiality, governing law, liability caps, etc.
+3. Ambiguous statements: vague standards like "reasonable efforts", "as needed", clauses left to one
+   party's sole discretion, undefined terms like "material breach" without a definition.
+4. Unusual payment terms: 100% non-refundable upfront payment, payment due immediately/on demand,
+   uncapped or maximum-rate-permitted late fees/penalties, missing payment schedule.
 
 Contract text:
 {text[:12000]}
@@ -225,7 +246,7 @@ def _detect_risks_fallback(text: str) -> dict:
     missing_clauses = []
 
     for clause_name, keywords in STANDARD_CLAUSES.items():
-        found = any(kw in text_lower for kw in keywords)
+        found = any(re.search(r"\b" + re.escape(kw) + r"\w*", text_lower) for kw in keywords)
         if not found:
             missing_clauses.append(clause_name.replace("_", " ").title())
 
@@ -239,6 +260,33 @@ def _detect_risks_fallback(text: str) -> dict:
                 "risk_level": "high",
                 "explanation": f"Pattern matched: \u2018...{text[snippet_start:snippet_end].strip()}...\u2019",
                 "confidence": 0.7,
+                "risk_category": "high_risk_clause",
+            })
+
+    for risk_name, pattern in AMBIGUOUS_STATEMENT_PATTERNS.items():
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            snippet_start = max(0, match.start() - 50)
+            snippet_end = min(len(text), match.end() + 50)
+            risks.append({
+                "clause": f"Ambiguous: {risk_name.replace('_', ' ').title()}",
+                "risk_level": "medium",
+                "explanation": f"Vague/undefined language found: \u2018...{text[snippet_start:snippet_end].strip()}...\u2019. Consider defining this term precisely.",
+                "confidence": 0.55,
+                "risk_category": "ambiguous_statement",
+            })
+
+    for risk_name, pattern in UNUSUAL_PAYMENT_PATTERNS.items():
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            snippet_start = max(0, match.start() - 50)
+            snippet_end = min(len(text), match.end() + 50)
+            risks.append({
+                "clause": f"Unusual Payment Term: {risk_name.replace('_', ' ').title()}",
+                "risk_level": "high",
+                "explanation": f"Non-standard payment condition detected: \u2018...{text[snippet_start:snippet_end].strip()}...\u2019",
+                "confidence": 0.65,
+                "risk_category": "unusual_payment_term",
             })
 
     for clause in missing_clauses:
@@ -247,6 +295,7 @@ def _detect_risks_fallback(text: str) -> dict:
             "risk_level": "medium",
             "explanation": f"No '{clause}' language was detected. This clause is standard in most contracts and its absence may leave a party unprotected.",
             "confidence": 0.6,
+            "risk_category": "missing_clause",
         })
 
     high_count = sum(1 for r in risks if r["risk_level"] == "high")
@@ -274,6 +323,7 @@ def generate_summary(text: str, client=None) -> dict:
   "executive_summary": "2-4 sentence plain-English summary",
   "key_obligations": ["string", ...],
   "important_dates": ["string", ...],
+  "important_clauses": ["string - name and 1-line description of each notable clause", ...],
   "recommended_actions": ["string", ...]
 }}
 
@@ -326,10 +376,22 @@ def _generate_summary_fallback(text: str) -> dict:
     if not actions:
         actions.append("Have this contract reviewed by legal counsel before signing.")
 
+    important_clauses = []
+    for clause_name, keywords in STANDARD_CLAUSES.items():
+        for kw in keywords:
+            match = re.search(r"\b" + re.escape(kw) + r"\w*", text, flags=re.IGNORECASE)
+            if match:
+                start = max(0, match.start() - 20)
+                end = min(len(text), match.end() + 80)
+                snippet = re.sub(r"\s+", " ", text[start:end]).strip()
+                important_clauses.append(f"{clause_name.replace('_', ' ').title()}: \u2026{snippet}\u2026")
+                break
+
     return {
         "executive_summary": executive_summary,
         "key_obligations": [o.strip() for o in obligations[:5]],
         "important_dates": list(dict.fromkeys(dates))[:5],
+        "important_clauses": important_clauses[:8],
         "recommended_actions": actions,
         "source": "fallback",
     }

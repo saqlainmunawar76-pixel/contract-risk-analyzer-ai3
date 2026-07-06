@@ -94,6 +94,34 @@ def is_admin(user: dict) -> bool:
     return bool(user) and user.get("role") == "admin"
 
 
+def change_password(user_id: int, current_password: str, new_password: str, confirm_new_password: str):
+    """User profile management: let a logged-in user change their own password."""
+    user = storage.get_user_by_id(user_id)
+    if not user or not verify_password(current_password, user["password_hash"]):
+        raise AuthError("Current password is incorrect.")
+    if new_password != confirm_new_password:
+        raise AuthError("New passwords do not match.")
+    _validate_password_strength(new_password)
+
+    storage.update_password(user_id, hash_password(new_password))
+    storage.log_action(user_id, user["username"], "change_password")
+
+
+def update_email(user_id: int, new_email: str):
+    """User profile management: let a logged-in user update their email address."""
+    new_email = new_email.strip().lower()
+    if not EMAIL_RE.match(new_email):
+        raise AuthError("Please enter a valid email address.")
+
+    existing = storage.get_user_by_email(new_email)
+    if existing and existing["id"] != user_id:
+        raise AuthError("That email is already in use by another account.")
+
+    user = storage.get_user_by_id(user_id)
+    storage.update_email(user_id, new_email)
+    storage.log_action(user_id, user["username"], "update_email", new_email)
+
+
 def _public_user(user: dict) -> dict:
     """Strip sensitive fields before handing the user dict to session_state/UI."""
     return {
