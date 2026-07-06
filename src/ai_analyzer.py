@@ -228,16 +228,54 @@ Check for ALL of these categories:
 4. Unusual payment terms: 100% non-refundable upfront payment, payment due immediately/on demand,
    uncapped or maximum-rate-permitted late fees/penalties, missing payment schedule.
 
+IMPORTANT: every single item in "risks" MUST include a numeric "confidence" value between 0.0 and 1.0
+(your certainty that this is a real issue). Never omit it and never set it to 0 unless you are
+genuinely uncertain the issue exists at all.
+
 Contract text:
 {text[:12000]}
 """
             result = _call_gemini_json(client, prompt)
             result["source"] = "ai"
-            return result
+            return _sanitize_risks_result(result)
         except Exception:
             pass
 
     return rule_based
+
+
+def _sanitize_risks_result(result: dict) -> dict:
+    """
+    Defensively fill in any fields the LLM omitted or returned as null/out-of-range,
+    so the UI never shows a misleading '0% confidence' or crashes on a missing key.
+    """
+    default_confidence_by_level = {"high": 0.8, "medium": 0.65, "low": 0.5}
+
+    cleaned_risks = []
+    for risk in result.get("risks", []) or []:
+        level = risk.get("risk_level") or "medium"
+        if level not in ("high", "medium", "low"):
+            level = "medium"
+
+        confidence = risk.get("confidence")
+        if not isinstance(confidence, (int, float)) or confidence <= 0:
+            confidence = default_confidence_by_level[level]
+        confidence = max(0.0, min(1.0, float(confidence)))
+
+        cleaned_risks.append({
+            "clause": risk.get("clause") or "Unnamed clause",
+            "risk_level": level,
+            "explanation": risk.get("explanation") or "No further explanation provided.",
+            "confidence": confidence,
+            "risk_category": risk.get("risk_category") or "high_risk_clause",
+        })
+
+    result["risks"] = cleaned_risks
+    result.setdefault("missing_clauses", [])
+    if result.get("overall_risk_level") not in ("high", "medium", "low"):
+        high_count = sum(1 for r in cleaned_risks if r["risk_level"] == "high")
+        result["overall_risk_level"] = "high" if high_count >= 2 else ("medium" if high_count == 1 else "low")
+    return result
 
 
 def _detect_risks_fallback(text: str) -> dict:
